@@ -1,0 +1,22 @@
+Ignoruj wytrenowane modele
+
+*.pkl
+
+Ignoruj środowiska wirtualne
+
+venv/
+.venv/
+
+Ignoruj pliki cache Pythona
+
+pycache/
+*.pyc
+
+Ignoruj pliki specyficzne dla systemów operacyjnych
+
+.DS_Store
+Thumbs.db
+
+Ignoruj pliki ze zmiennymi środowiskowymi
+
+.env
