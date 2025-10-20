@@ -5,7 +5,7 @@ import streamlit as st
 import plotly.express as px
 from pycaret.regression import load_model, predict_model
 
-# --- GŁÓWNE STRUKTURY DANYCH ---
+#  STRUKTURY DANYCH 
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -23,7 +23,6 @@ class AppConfig:
 
 @dataclass(frozen=True)
 class UserProfile:
-    """Profil użytkownika."""
     age: int; sex: str; height_cm: float; weight_kg: float; smoker: bool
     children: int; weekly_activity_days: int; alcohol_units_week: int
     conditions: List[str]; region: str; has_group_option: bool
@@ -35,7 +34,6 @@ class UserProfile:
         return round(self.weight_kg / (height_m ** 2), 1)
 
     def to_prediction_input(self) -> pd.DataFrame:
-        """Przygotowuje dane dla modelu AI."""
         return pd.DataFrame({
             'age': [self.age], 'sex': [self.sex], 'bmi': [self.bmi],
             'children': [self.children], 'smoker': ['yes' if self.smoker else 'no'],
@@ -58,7 +56,7 @@ class AppState:
     profile: UserProfile; pipeline: Any; engine: Any; config: AppConfig
     base_premium: float; multiplier: int; period_label: str
     
-# --- LOGIKA BIZNESOWA I TREŚCI ---
+# MODEL  I PREDYKCJA
 
 @st.cache_resource
 def load_pipeline(model_path: str) -> Any:
@@ -138,7 +136,7 @@ class RecommendationEngine:
         """Zwraca pasujące rekomendacje finansowe."""
         return [r for r in self._recommendations if r.applies_when(user_profile)]
 
-# --- INTERFEJS UŻYTKOWNIKA (UI) ---
+# UI
 
 def ui_sidebar(config: AppConfig) -> UserProfile:
     """Renderuje panel boczny z danymi."""
@@ -250,7 +248,7 @@ def ui_savings_chart(state: AppState):
         fig.update_traces(textangle=0, textposition="outside")
         st.plotly_chart(fig, use_container_width=True)
 
-# --- GŁÓWNY BLOK APLIKACJI ---
+# MAIN  
 
 def manage_session_state(current_profile: UserProfile):
     """Zarządza stanem sesji Streamlit."""
@@ -279,7 +277,7 @@ def main():
     app_state = AppState(
         profile=user_profile, pipeline=pipeline, engine=reco_engine, config=config, 
         base_premium=base_premium, multiplier=multiplier, 
-        period_label=period_label, health_advisor=None # Już niepotrzebne
+        period_label=period_label
     )
     
     st.divider()
