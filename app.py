@@ -1,11 +1,11 @@
 from dataclasses import dataclass, replace
-from typing import List, Any, Callable
+from typing import List, Any, Callable, Optional
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 from pycaret.regression import load_model, predict_model
 
-# GŁÓWNE STRUKTURY DANYCH 
+# --- GŁÓWNE STRUKTURY DANYCH ---
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -46,24 +46,19 @@ class UserProfile:
 
 @dataclass(frozen=True)
 class Recommendation:
-    """Rekomendacja finansowa."""
+    """Zintegrowana rekomendacja finansowo-zdrowotna."""
     id: str; title: str; description: str
+    health_impact: Optional[str]
     applies_when: Callable[[UserProfile], bool]
     simulate_change: Callable[[UserProfile], UserProfile]
 
 @dataclass(frozen=True)
-class HealthTip:
-    """Porada zdrowotna."""
-    id: str; title: str; description: str
-    applies_when: Callable[[UserProfile], bool]
-
-@dataclass(frozen=True)
 class AppState:
     """Główny stan aplikacji."""
-    profile: UserProfile; pipeline: Any; engine: Any; config: AppConfig; health_advisor: Any
+    profile: UserProfile; pipeline: Any; engine: Any; config: AppConfig
     base_premium: float; multiplier: int; period_label: str
     
-# PREDYKCJA 
+# --- LOGIKA BIZNESOWA I TREŚCI ---
 
 @st.cache_resource
 def load_pipeline(model_path: str) -> Any:
@@ -90,7 +85,7 @@ def calculate_final_premium(u: UserProfile, pipeline: Any, config: AppConfig) ->
     return round(final_premium, 2)
 
 class RecommendationEngine:
-    """Silnik rekomendacji finansowych."""
+    """Silnik zintegrowanych rekomendacji."""
     def __init__(self, config: AppConfig):
         self._config = config
         self._recommendations = self._initialize_recommendations()
@@ -100,40 +95,50 @@ class RecommendationEngine:
         return round(self._config.TARGET_BMI * (h_m ** 2), 1)
 
     def _initialize_recommendations(self) -> List[Recommendation]:
-        """Definiuje rekomendacje finansowe."""
+        """Definiuje rekomendacje finansowe wraz z ich wpływem na zdrowie."""
         return [
-            Recommendation("quit_smoking", "Rzuć palenie", "Największy pojedynczy czynnik ryzyka, przynoszący największe korzyści finansowe i zdrowotne.", lambda u: u.smoker, lambda u: replace(u, smoker=False)),
-            Recommendation("improve_bmi", f"Zredukuj BMI do normy (< {self._config.TARGET_BMI})", "Osiągnięcie prawidłowej masy ciała znacznie obniża ryzyko wielu chorób przewlekłych.", lambda u: u.bmi >= self._config.TARGET_BMI, lambda u: replace(u, weight_kg=self._get_target_weight(u.height_cm))),
-            Recommendation("increase_activity", "Zwiększ aktywność fizyczną", f"Regularna aktywność (min. {self._config.ACTIVITY_DAYS_THRESHOLD} dni w tyg.) jest kluczowa dla zdrowia.", lambda u: u.weekly_activity_days < self._config.ACTIVITY_DAYS_THRESHOLD, lambda u: replace(u, weekly_activity_days=self._config.ACTIVITY_DAYS_THRESHOLD)),
-            Recommendation("reduce_alcohol", "Ogranicz spożycie alkoholu", f"Ograniczenie spożycia do max. {self._config.ALCOHOL_UNITS_THRESHOLD} jednostek tygodniowo poprawia profil ryzyka.", lambda u: u.alcohol_units_week > self._config.ALCOHOL_UNITS_THRESHOLD, lambda u: replace(u, alcohol_units_week=self._config.ALCOHOL_UNITS_THRESHOLD)),
-            Recommendation("group_policy_benefit", "Zobacz korzyść z polisy grupowej", "Sprawdź, ile oszczędzasz dzięki tej opcji w porównaniu do standardowej oferty indywidualnej.", lambda u: u.has_group_option, lambda u: replace(u, has_group_option=False)),
+            Recommendation(
+                id="quit_smoking", title="Rzuć palenie",
+                description="Największy pojedynczy czynnik ryzyka, przynoszący największe korzyści finansowe i zdrowotne.",
+                health_impact="Palenie tytoniu drastycznie zwiększa ryzyko chorób serca, nowotworów (szczególnie płuc) i przewlekłych problemów z oddychaniem. Rzucenie palenia to najważniejszy krok w kierunku dłuższego życia.",
+                applies_when=lambda u: u.smoker, 
+                simulate_change=lambda u: replace(u, smoker=False)
+            ),
+            Recommendation(
+                id="improve_bmi", title=f"Zredukuj BMI do normy (< {self._config.TARGET_BMI})",
+                description="Osiągnięcie prawidłowej masy ciała znacznie obniża ryzyko wielu chorób przewlekłych, co przekłada się na składkę.",
+                health_impact="Nadwaga i otyłość (BMI >= 25) to prosta droga do nadciśnienia, cukrzycy typu 2, chorób serca i problemów ze stawami. Utrzymanie prawidłowej wagi to fundament profilaktyki zdrowotnej.",
+                applies_when=lambda u: u.bmi >= 25.0, 
+                simulate_change=lambda u: replace(u, weight_kg=self._get_target_weight(u.height_cm))
+            ),
+            Recommendation(
+                id="increase_activity", title="Zwiększ aktywność fizyczną",
+                description=f"Zwiększenie aktywności do co najmniej {self._config.ACTIVITY_DAYS_THRESHOLD} dni w tygodniu to klucz do lepszego zdrowia i niższej składki.",
+                health_impact=f"Niski poziom aktywności fizycznej jest jednym z głównych czynników ryzyka chorób cywilizacyjnych. Regularny ruch (nawet 30-minutowy spacer) pomaga regulować ciśnienie krwi, obniża poziom złego cholesterolu (LDL) i cukru we krwi, co bezpośrednio zmniejsza ryzyko zawału serca, udaru mózgu oraz cukrzycy typu 2. To inwestycja w dłużesze, zdrowsze życie.",
+                applies_when=lambda u: u.weekly_activity_days < self._config.ACTIVITY_DAYS_THRESHOLD, 
+                simulate_change=lambda u: replace(u, weekly_activity_days=self._config.ACTIVITY_DAYS_THRESHOLD)
+            ),
+            Recommendation(
+                id="reduce_alcohol", title="Ogranicz spożycie alkoholu",
+                description=f"Ograniczenie spożycia do maksymalnie {self._config.ALCOHOL_UNITS_THRESHOLD} jednostek tygodniowo poprawia profil ryzyka.",
+                health_impact=f"Regularne spożywanie powyżej {self._config.ALCOHOL_UNITS_THRESHOLD} jednostek alkoholu tygodniowo znacząco obciąża wątrobę i zwiększa ryzyko jej marskości, a także chorób serca i niektórych nowotworów.",
+                applies_when=lambda u: u.alcohol_units_week > self._config.ALCOHOL_UNITS_THRESHOLD, 
+                simulate_change=lambda u: replace(u, alcohol_units_week=self._config.ALCOHOL_UNITS_THRESHOLD)
+            ),
+            Recommendation(
+                id="group_policy_benefit", title="Zobacz korzyść z polisy grupowej",
+                description="Sprawdź, ile oszczędzasz dzięki tej opcji w porównaniu do standardowej oferty indywidualnej.",
+                health_impact=None, # Ta rekomendacja nie ma bezpośredniego wpływu na zdrowie
+                applies_when=lambda u: u.has_group_option, 
+                simulate_change=lambda u: replace(u, has_group_option=False)
+            ),
         ]
 
     def get_for_user(self, user_profile: UserProfile) -> List[Recommendation]:
         """Zwraca pasujące rekomendacje finansowe."""
         return [r for r in self._recommendations if r.applies_when(user_profile)]
 
-class HealthAdvisor:
-    """Silnik porad zdrowotnych."""
-    def __init__(self, config: AppConfig):
-        self._config = config
-        self._tips = self._initialize_tips()
-
-    def _initialize_tips(self) -> List[HealthTip]:
-        """Definiuje porady zdrowotne."""
-        return [
-            HealthTip("bmi_high", "Masz podwyższone BMI", "Twoje BMI jest powyżej normy. Rozważ konsultację z dietetykiem, zwiększenie regularnej aktywności (np. spacery, rower) i zbilansowanie diety - więcej warzyw, mniej przetworzonej żywności.", lambda u: u.bmi >= 25),
-            HealthTip("bmi_low", "Masz niedowagę", "Twoje BMI jest poniżej normy. Skonsultuj się z lekarzem, aby wykluczyć problemy zdrowotne. Rozważ współpracę z dietetykiem w celu opracowania planu żywieniowego.", lambda u: u.bmi < 18.5),
-            HealthTip("smoker_health", "Palenie a zdrowie", "Palenie tytoniu drastycznie zwiększa ryzyko chorób serca, nowotworów i problemów z płucami. Porozmawiaj z lekarzem o metodach rzucania palenia.", lambda u: u.smoker),
-            HealthTip("alcohol_health", "Ogranicz alkohol", f"Regularne spożywanie powyżej {self._config.ALCOHOL_UNITS_THRESHOLD} jednostek alkoholu tygodniowo obciąża wątrobę i zwiększa ryzyko wielu chorób. Rozważ ograniczenie.", lambda u: u.alcohol_units_week > self._config.ALCOHOL_UNITS_THRESHOLD),
-            HealthTip("activity_low", "Zwiększ aktywność fizyczną", f"Niski poziom aktywności fizycznej (poniżej {self._config.ACTIVITY_DAYS_THRESHOLD} dni w tygodniu) jest jednym z głównych czynników ryzyka wielu chorób cywilizacyjnych. Regularny ruch (nawet 30-minutowy spacer) pomaga regulować ciśnienie krwi, obniża poziom złego cholesterolu (LDL) i cukru we krwi, co bezpośrednio zmniejsza ryzyko chorób serca, udaru mózgu oraz cukrzycy typu 2. Zwiększenie aktywności to inwestycja w dłużesze, zdrowsze życie.", lambda u: u.weekly_activity_days < self._config.ACTIVITY_DAYS_THRESHOLD)
-        ]
-
-    def get_for_user(self, user_profile: UserProfile) -> List[HealthTip]:
-        """Zwraca pasujące porady zdrowotne."""
-        return [tip for tip in self._tips if tip.applies_when(user_profile)]
-
-# UI
+# --- INTERFEJS UŻYTKOWNIKA (UI) ---
 
 def ui_sidebar(config: AppConfig) -> UserProfile:
     """Renderuje panel boczny z danymi."""
@@ -187,18 +192,22 @@ def ui_dashboard(state: AppState):
     k3.metric("Status palenia", "Palący 🚬" if state.profile.smoker else "Niepalący ✅")
 
 def ui_recommendations(state: AppState):
-    """Renderuje sekcję rekomendacji finansowych."""
-    st.subheader("💡 Jak możesz realnie obniżyć składkę?")
+    """Renderuje sekcję zintegrowanych rekomendacji."""
+    st.subheader("💡 Jak możesz realnie obniżyć składkę i zadbać o zdrowie?")
     st.caption("Kliknij przycisk, aby zobaczyć precyzyjną symulację oszczędności.")
 
     active_recos = state.engine.get_for_user(state.profile)
     if not active_recos:
-        st.success("Gratulacje! Twój profil jest bardzo dobry i nie mamy oczywistych rekomendacji finansowych.")
+        st.success("Gratulacje! Twój profil jest bardzo dobry i nie mamy oczywistych rekomendacji.")
         return
 
     for reco in active_recos:
         with st.expander(f"**{reco.title}**"):
             st.write(reco.description)
+            
+            if reco.health_impact:
+                st.info(f"**Wpływ na zdrowie:** {reco.health_impact}")
+
             if st.button(f"Symuluj dla: {reco.title}", key=f"btn_{reco.id}"):
                 modified_profile = reco.simulate_change(state.profile)
                 new_premium = calculate_final_premium(modified_profile, state.pipeline, state.config)
@@ -241,21 +250,7 @@ def ui_savings_chart(state: AppState):
         fig.update_traces(textangle=0, textposition="outside")
         st.plotly_chart(fig, use_container_width=True)
 
-def ui_health_advice(state: AppState):
-    """Renderuje sekcję porad zdrowotnych."""
-    st.subheader("👨‍⚕️ Twoje zalecenia zdrowotne")
-    health_tips = state.health_advisor.get_for_user(state.profile)
-
-    if not health_tips:
-        st.success("Świetnie! Na podstawie Twoich danych nie mamy specyficznych zaleceń zdrowotnych.")
-        return
-
-    for tip in health_tips:
-        with st.container(border=True):
-            st.warning(f"**{tip.title}**")
-            st.write(tip.description)
-
-# MAIN
+# --- GŁÓWNY BLOK APLIKACJI ---
 
 def manage_session_state(current_profile: UserProfile):
     """Zarządza stanem sesji Streamlit."""
@@ -271,7 +266,6 @@ def main():
     
     pipeline = load_pipeline(config.MODEL_PATH)
     reco_engine = RecommendationEngine(config)
-    health_advisor = HealthAdvisor(config)
     user_profile = ui_sidebar(config)
 
     manage_session_state(user_profile)
@@ -284,14 +278,12 @@ def main():
     
     app_state = AppState(
         profile=user_profile, pipeline=pipeline, engine=reco_engine, config=config, 
-        health_advisor=health_advisor, base_premium=base_premium, multiplier=multiplier, 
-        period_label=period_label
+        base_premium=base_premium, multiplier=multiplier, 
+        period_label=period_label, health_advisor=None # Już niepotrzebne
     )
     
     st.divider()
     ui_dashboard(app_state)
-    st.divider()
-    ui_health_advice(app_state)
     st.divider()
     ui_recommendations(app_state)
     st.divider()
@@ -299,4 +291,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
