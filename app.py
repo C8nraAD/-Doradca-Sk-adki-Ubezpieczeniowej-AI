@@ -9,7 +9,6 @@ from pycaret.regression import load_model, predict_model
 
 @dataclass(frozen=True)
 class AppConfig:
-    """Konfiguracja aplikacji."""
     PAGE_TITLE: str = "Doradca Składki Ubezpieczeniowej AI"
     PAGE_ICON: str = "🩺"
     MODEL_PATH: str = 'fin'
@@ -44,7 +43,6 @@ class UserProfile:
 
 @dataclass(frozen=True)
 class Recommendation:
-    """Zintegrowana rekomendacja finansowo-zdrowotna."""
     id: str; title: str; description: str
     health_impact: Optional[str]
     applies_when: Callable[[UserProfile], bool]
@@ -60,11 +58,9 @@ class AppState:
 
 @st.cache_resource
 def load_pipeline(model_path: str) -> Any:
-    """Wczytuje model AI."""
     return load_model(model_path, verbose=False)
 
 def _calculate_base_premium(u: UserProfile, pipeline: Any, config: AppConfig) -> float:
-    """Oblicza składkę bazową."""
     input_df = u.to_prediction_input()
     pred_df = predict_model(pipeline, data=input_df)
     
@@ -77,13 +73,12 @@ def _calculate_base_premium(u: UserProfile, pipeline: Any, config: AppConfig) ->
     return gross_premium_year / config.MONTHS_IN_YEAR
 
 def calculate_final_premium(u: UserProfile, pipeline: Any, config: AppConfig) -> float:
-    """Oblicza składkę finalną."""
     base_premium = _calculate_base_premium(u, pipeline, config)
     final_premium = base_premium * config.GROUP_POLICY_DISCOUNT if u.has_group_option else base_premium
     return round(final_premium, 2)
 
 class RecommendationEngine:
-    """Silnik zintegrowanych rekomendacji."""
+
     def __init__(self, config: AppConfig):
         self._config = config
         self._recommendations = self._initialize_recommendations()
@@ -93,7 +88,6 @@ class RecommendationEngine:
         return round(self._config.TARGET_BMI * (h_m ** 2), 1)
 
     def _initialize_recommendations(self) -> List[Recommendation]:
-        """Definiuje rekomendacje finansowe wraz z ich wpływem na zdrowie."""
         return [
             Recommendation(
                 id="quit_smoking", title="Rzuć palenie",
@@ -139,7 +133,6 @@ class RecommendationEngine:
 # UI
 
 def ui_sidebar(config: AppConfig) -> UserProfile:
-    """Renderuje panel boczny z danymi."""
     st.sidebar.header("📝 Wprowadź swoje dane")
     with st.sidebar:
         age = st.number_input("Wiek", 18, 100, 30, key="age")
@@ -175,7 +168,6 @@ def ui_sidebar(config: AppConfig) -> UserProfile:
         )
 
 def ui_dashboard(state: AppState):
-    """Renderuje panel wskaźników (KPI)."""
     st.subheader("📊 Twoja spersonalizowana analiza")
     k1, k2, k3 = st.columns(3)
 
@@ -190,7 +182,6 @@ def ui_dashboard(state: AppState):
     k3.metric("Status palenia", "Palący 🚬" if state.profile.smoker else "Niepalący ✅")
 
 def ui_recommendations(state: AppState):
-    """Renderuje sekcję zintegrowanych rekomendacji."""
     st.subheader("💡 Jak możesz realnie obniżyć składkę i zadbać o zdrowie?")
     st.caption("Kliknij przycisk, aby zobaczyć precyzyjną symulację oszczędności.")
 
@@ -251,7 +242,6 @@ def ui_savings_chart(state: AppState):
 # MAIN  
 
 def manage_session_state(current_profile: UserProfile):
-    """Zarządza stanem sesji Streamlit."""
     if 'simulations' not in st.session_state or st.session_state.get('last_profile') != current_profile:
         st.session_state.simulations = {}
         st.session_state.last_profile = current_profile
