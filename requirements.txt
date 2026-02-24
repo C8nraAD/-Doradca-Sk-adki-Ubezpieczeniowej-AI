@@ -1,4 +1,7 @@
+os
+bot3
 pandas
 streamlit
+dotenv
 plotly
 pycaret[full]

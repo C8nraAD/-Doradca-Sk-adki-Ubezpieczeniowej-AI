@@ -1,15 +1,18 @@
+import os
+import boto3
 from dataclasses import dataclass, replace
 from typing import List, Any, Callable, Optional
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 from pycaret.regression import load_model, predict_model
+from dotenv import load_dotenv
+
+load_dotenv()
 
 @dataclass(frozen=True)
 class AppConfig:
     PAGE_TITLE: str = "AI Insurance Premium Advisor"
-    PAGE_ICON: str = "🩺"
-    MODEL_PATH: str = 'fin'
     USD_TO_PLN_RATE: float = 4.0
     MONTHS_IN_YEAR: int = 12
     TARGET_BMI: float = 24.9
@@ -17,6 +20,13 @@ class AppConfig:
     GROUP_POLICY_DISCOUNT: float = 0.85 
     ALCOHOL_UNITS_THRESHOLD: int = 7
     ACTIVITY_DAYS_THRESHOLD: int = 3
+    
+    AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+    AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
+    AWS_ENDPOINT_URL_S3: str = os.getenv("AWS_ENDPOINT_URL_S3", "").strip()
+    DO_SPACE_NAME: str = os.getenv("DO_SPACE_NAME", "insurance").strip()
+    MODEL_S3_KEY: str = os.getenv("MODEL_S3_KEY", "fin.pkl").strip()
+    LOCAL_MODEL_NAME: str = "downloaded_model" 
 
 @dataclass(frozen=True)
 class UserProfile:
@@ -52,8 +62,24 @@ class AppState:
     base_premium: float; multiplier: int; period_label: str
 
 @st.cache_resource
-def load_pipeline(model_path: str) -> Any:
-    return load_model(model_path, verbose=False)
+def load_pipeline(_config: AppConfig) -> Any:
+    local_file_path = f"{_config.LOCAL_MODEL_NAME}.pkl"
+    
+    try:
+        if not os.path.exists(local_file_path):
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=_config.AWS_ENDPOINT_URL_S3,
+                aws_access_key_id=_config.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=_config.AWS_SECRET_ACCESS_KEY
+            )
+            s3.download_file(_config.DO_SPACE_NAME, _config.MODEL_S3_KEY, local_file_path)
+            
+        return load_model(_config.LOCAL_MODEL_NAME, verbose=False)
+        
+    except Exception as e:
+        st.error(f"Critical System Error: {e}")
+        st.stop()
 
 def _calculate_base_premium(u: UserProfile, pipeline: Any, config: AppConfig) -> float:
     input_df = u.to_prediction_input()
@@ -73,7 +99,6 @@ def calculate_final_premium(u: UserProfile, pipeline: Any, config: AppConfig) ->
     return round(final_premium, 2)
 
 class RecommendationEngine:
-
     def __init__(self, config: AppConfig):
         self._config = config
         self._recommendations = self._initialize_recommendations()
@@ -125,7 +150,7 @@ class RecommendationEngine:
         return [r for r in self._recommendations if r.applies_when(user_profile)]
 
 def ui_sidebar(config: AppConfig) -> UserProfile:
-    st.sidebar.header("📝 Enter your details")
+    st.sidebar.header("Enter your details")
     with st.sidebar:
         age = st.number_input("Age", 18, 100, 30, key="age")
         sex_map = {"Female": "female", "Male": "male"}
@@ -160,34 +185,34 @@ def ui_sidebar(config: AppConfig) -> UserProfile:
         )
 
 def ui_dashboard(state: AppState):
-    st.subheader("📊 Your Personalized Analysis")
+    st.subheader("Your Personalized Analysis")
     k1, k2, k3 = st.columns(3)
 
     with k1:
         bmi = state.profile.bmi
-        color, status = ("green", "Normal ✅") if 18.5 <= bmi < 25 else ("red", "Out of range ⚠️")
+        color, status = ("green", "Normal") if 18.5 <= bmi < 25 else ("red", "Out of range")
         st.markdown(f"""
         <div style="line-height: 1.2; height: 100%;"><p style="font-size: 0.9rem; color: #808495; margin-bottom: 0;">Your BMI</p><p style="font-size: 1.75rem; font-weight: 600; margin-bottom: 0;">{bmi}</p><p style="color: {color}; margin-bottom: 0;">{status}</p></div>
         """, unsafe_allow_html=True)
 
     k2.metric("Estimated Premium", f"{state.base_premium * state.multiplier:.2f} PLN{state.period_label}")
-    k3.metric("Smoking Status", "Smoker 🚬" if state.profile.smoker else "Non-smoker ✅")
+    k3.metric("Smoking Status", "Smoker" if state.profile.smoker else "Non-smoker")
 
 def ui_recommendations(state: AppState):
-    st.subheader("💡 How to lower your premium and improve your health")
+    st.subheader("How to lower your premium and improve your health")
     st.caption("Click the button to see a precise savings simulation.")
 
     active_recos = state.engine.get_for_user(state.profile)
     if not active_recos:
-        st.success("Congratulations! Your profile is excellent and we have no obvious recommendations.")
+        st.success("Your profile is optimal. No further recommendations available.")
         return
 
     for reco in active_recos:
-        with st.expander(f"**{reco.title}**"):
+        with st.expander(f"{reco.title}"):
             st.write(reco.description)
             
             if reco.health_impact:
-                st.info(f"**Health Impact:** {reco.health_impact}")
+                st.info(f"Health Impact: {reco.health_impact}")
 
             if st.button(f"Simulate: {reco.title}", key=f"btn_{reco.id}"):
                 modified_profile = reco.simulate_change(state.profile)
@@ -199,10 +224,10 @@ def ui_recommendations(state: AppState):
                 sim = st.session_state.simulations[reco.id]
                 sav = sim['savings'] * state.multiplier
                 if sav > 0.01:
-                    msg = (f"Savings with this option: **{sav:.2f} PLN{state.period_label}**" if reco.id == "group_policy_benefit" else f"New premium: **{sim['new_premium'] * state.multiplier:.2f} PLN{state.period_label}** | Savings: **{sav:.2f} PLN{state.period_label}**")
-                    st.success(f"✅ {msg}")
+                    msg = (f"Savings with this option: {sav:.2f} PLN{state.period_label}" if reco.id == "group_policy_benefit" else f"New premium: {sim['new_premium'] * state.multiplier:.2f} PLN{state.period_label} | Savings: {sav:.2f} PLN{state.period_label}")
+                    st.success(f"{msg}")
                 else:
-                    st.info("ℹ️ This simulation shows no savings for your current profile.")
+                    st.info("This simulation shows no savings for your current profile.")
 
 def ui_savings_chart(state: AppState):
     if not st.session_state.get('simulations'):
@@ -237,10 +262,10 @@ def manage_session_state(current_profile: UserProfile):
 
 def main():
     config = AppConfig()
-    st.set_page_config(page_title=config.PAGE_TITLE, page_icon=config.PAGE_ICON, layout="wide")
-    st.title(f"{config.PAGE_ICON} {config.PAGE_TITLE}")
+    st.set_page_config(page_title=config.PAGE_TITLE, layout="wide")
+    st.title(config.PAGE_TITLE)
     
-    pipeline = load_pipeline(config.MODEL_PATH)
+    pipeline = load_pipeline(config)
     reco_engine = RecommendationEngine(config)
     user_profile = ui_sidebar(config)
 
