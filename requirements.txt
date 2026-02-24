@@ -1,7 +1,7 @@
-os
-bot3
-pandas
 streamlit
-dotenv
+pandas
+numpy
 plotly
-pycaret[full]
+pycaret
+boto3
+python-dotenv
