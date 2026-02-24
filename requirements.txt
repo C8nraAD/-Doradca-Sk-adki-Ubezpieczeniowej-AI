@@ -2,6 +2,6 @@ streamlit
 pandas
 numpy
 plotly
-pycaret
+pycaret[full]
 boto3
 python-dotenv
