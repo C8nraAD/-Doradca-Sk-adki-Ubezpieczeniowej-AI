@@ -1,20 +1,18 @@
 # AI Half-Marathon Predictor
 
-System predykcyjny szacujący czas ukończenia biegu na dystansie półmaratonu. Rozwiązanie opiera się na modelu uczenia maszynowego wytrenowanym na historycznych wynikach, zoptymalizowanym pod kątem wydajności obliczeniowej.
+A predictive inference system estimating half-marathon finish times. The solution relies on a machine learning model trained on historical race results, optimized for strict computational performance.
 
+## Architecture & Design Decisions
+* **Inference Engine:** Utilizes Ridge Regression (`Ridge`) from the `scikit-learn` library. The model explains 98.34% of the variance (R²) with a Mean Absolute Error (MAE) of < 60 seconds.
+* **Computational Optimization:** Bypassed iterative Python loops in favor of `NumPy` vectorization. Time interpolation and accumulation across 22 tracking waypoints are executed strictly via `np.interp` and `np.cumsum` arrays, drastically reducing processing latency to $O(1)$ per array.
+* **User Interface:** Built with `Streamlit` and driven by a deterministic Finite State Machine (FSM). This strictly guards the model against the injection of invalid or out-of-distribution feature vectors.
+* **Telemetry & Observability:** LLM-driven coaching insights are integrated via `langfuse.openai`, providing comprehensive monitoring of token usage, latency, and API execution costs.
 
-
-## Architektura i Decyzje Projektowe
-* **Silnik Predykcyjny:** Wykorzystano regresję grzbietową (`Ridge Regression`) z biblioteki `scikit-learn`. Model tłumaczy 98.34% wariancji (R²) przy średnim błędzie bezwzględnym (MAE) < 60 sekund.
-* **Optymalizacja Obliczeń:** Zrezygnowano z iteracyjnych pętli w Pythonie na rzecz wektoryzacji w `NumPy`. Interpolacja i kumulacja czasu na 22 punktach pomiarowych realizowana jest przez funkcje `np.interp` i `np.cumsum`, co drastycznie redukuje czas procesowania.
-* **Interfejs Użytkownika:** Zbudowany w `Streamlit`, oparty na deterministycznej maszynie stanów (FSM), zapobiegającej wprowadzaniu niepoprawnych wektorów cech do modelu.
-* **Telemetria:** Generacja porad zaimplementowana z użyciem `langfuse.openai` do pełnego monitoringu latencji i kosztów wywołań LLM.
-
-## Wymagania
+## Prerequisites
 * Python 3.10+
-* `requirements.txt`: numpy, pandas, scikit-learn, streamlit, langfuse, openai
+* Dependencies (`requirements.txt`): `numpy`, `pandas`, `scikit-learn`, `streamlit`, `langfuse`, `openai`
 
-## Uruchomienie
+## Quickstart
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
